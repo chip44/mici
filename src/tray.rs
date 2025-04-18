@@ -1,10 +1,9 @@
-use image::GenericImageView;
-use std::sync::LazyLock;
+use image::{GenericImageView, ImageFormat};
+use std::{collections::HashMap, sync::LazyLock};
 
 static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
-    let img =
-        image::load_from_memory_with_format(include_bytes!("../icon.png"), image::ImageFormat::Png)
-            .expect("valid image");
+    let img = image::load_from_memory_with_format(include_bytes!("../icon.png"), ImageFormat::Png)
+        .unwrap();
     let (width, height) = img.dimensions();
     let mut data = img.into_rgba8().into_vec();
     assert_eq!(data.len() % 4, 0);
@@ -19,7 +18,9 @@ static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
 });
 
 #[derive(Debug)]
-pub struct SystemTray {}
+pub struct SystemTray {
+    pub nodes_names: HashMap<u32, String>,
+}
 
 impl ksni::Tray for SystemTray {
     fn id(&self) -> String {
@@ -27,10 +28,28 @@ impl ksni::Tray for SystemTray {
     }
 
     fn title(&self) -> String {
-        self.id().into() // TODO: show app names that use the microphone
+        let total_nodes = self.nodes_names.len();
+        let mut title = match total_nodes {
+            0 => unreachable!(),
+            1 => "1 app is using your microphone:".to_string(),
+            _ => format!("{total_nodes} apps are using your microphone:"),
+        };
+
+        title.reserve(
+            self.nodes_names
+                .values()
+                .map(|v| v.len() + 2)
+                .sum::<usize>(),
+        );
+        for value in self.nodes_names.values() {
+            title.push_str("\n");
+            title.push_str(value);
+        }
+
+        title
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![(*TRAY_ICON).clone()] // TODO: don't clone?
+        vec![TRAY_ICON.clone()]
     }
 }

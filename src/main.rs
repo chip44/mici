@@ -1,7 +1,11 @@
 use ksni::blocking::TrayMethods;
 use libspa::utils::dict::DictRef;
-use pipewire::{context::Context, keys::MEDIA_CLASS, main_loop::MainLoop};
-use std::{cell::RefCell, error::Error};
+use pipewire::{
+    context::Context,
+    keys::{APP_NAME, MEDIA_CLASS, NODE_NAME},
+    main_loop::MainLoop,
+};
+use std::{cell::RefCell, collections::HashMap, error::Error};
 
 mod tray;
 use tray::SystemTray;
@@ -29,11 +33,28 @@ impl PipeWireManager {
             return;
         }
 
+        let unknown_name_fallback = format!("<unknown app {id}>");
+        let node_name = props
+            .get(&NODE_NAME)
+            .or_else(|| props.get(&APP_NAME))
+            .or_else(|| Some(&unknown_name_fallback))
+            .unwrap();
+
         if self.nodes.len() == 0 {
             println!("initializing tray");
             assert!(self.tray_handle.is_none());
-            let tray = SystemTray {};
+            let mut nodes_names = HashMap::new();
+            nodes_names.insert(id, node_name.to_string());
+            let tray = SystemTray { nodes_names };
             self.tray_handle = Some(tray.spawn().unwrap());
+        } else {
+            self.tray_handle
+                .as_mut()
+                .unwrap()
+                .update(|tray: &mut SystemTray| {
+                    assert!(!tray.nodes_names.contains_key(&id));
+                    tray.nodes_names.insert(id, node_name.to_string())
+                });
         }
 
         println!("id: {id:?}");
@@ -53,6 +74,13 @@ impl PipeWireManager {
                 println!("closing tray");
                 handle.shutdown();
             }
+        } else {
+            self.tray_handle
+                .as_mut()
+                .unwrap()
+                .update(|tray: &mut SystemTray| {
+                    tray.nodes_names.remove(&id);
+                });
         }
     }
 }
