@@ -1,12 +1,14 @@
-use image::GenericImageView;
 use ksni::blocking::TrayMethods;
 use libspa::utils::dict::DictRef;
 use pipewire::{context::Context, keys::MEDIA_CLASS, main_loop::MainLoop};
-use std::{cell::RefCell, error::Error, sync::LazyLock};
+use std::{cell::RefCell, error::Error};
+
+mod tray;
+use tray::SystemTray;
 
 struct PipeWireManager {
     nodes: Vec<u32>,
-    tray_handle: Option<ksni::blocking::Handle<MyTray>>,
+    tray_handle: Option<ksni::blocking::Handle<SystemTray>>,
 }
 
 impl PipeWireManager {
@@ -30,7 +32,7 @@ impl PipeWireManager {
         if self.nodes.len() == 0 {
             println!("initializing tray");
             assert!(self.tray_handle.is_none());
-            let tray = MyTray {};
+            let tray = SystemTray {};
             self.tray_handle = Some(tray.spawn().unwrap());
         }
 
@@ -52,40 +54,6 @@ impl PipeWireManager {
                 handle.shutdown();
             }
         }
-    }
-}
-
-static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
-    let img =
-        image::load_from_memory_with_format(include_bytes!("../icon.png"), image::ImageFormat::Png)
-            .expect("valid image");
-    let (width, height) = img.dimensions();
-    let mut data = img.into_rgba8().into_vec();
-    assert_eq!(data.len() % 4, 0);
-    for pixel in data.chunks_exact_mut(4) {
-        pixel.rotate_right(1) // rgba to argb
-    }
-    ksni::Icon {
-        width: width as i32,
-        height: height as i32,
-        data,
-    }
-});
-
-#[derive(Debug)]
-struct MyTray {}
-
-impl ksni::Tray for MyTray {
-    fn id(&self) -> String {
-        env!("CARGO_PKG_NAME").into()
-    }
-
-    fn title(&self) -> String {
-        self.id().into() // TODO: show app names that use the microphone
-    }
-
-    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![(*TRAY_ICON).clone()] // TODO: don't clone?
     }
 }
 
