@@ -57,7 +57,7 @@ impl PipeWireManager {
         if let Some(handle) = self.tray_handle.as_mut() {
             handle.update(|tray: &mut SystemTray| {
                 // if we're about to remove the last node, return early to shutdown the tray
-                if tray.nodes.len() == 1 {
+                if tray.nodes.len() == 1 && tray.nodes.contains_key(&id) {
                     should_shutdown = true;
                     return;
                 }
