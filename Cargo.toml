@@ -9,6 +9,10 @@ libspa = "0.8"
 ksni = { version = "0.3", features = ["blocking"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+[features]
+default = ["embed-icon"]
+embed-icon = []
+
 [lints.rust]
 unsafe_code = "forbid"
 
