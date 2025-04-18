@@ -11,25 +11,18 @@ mod tray;
 use tray::SystemTray;
 
 struct PipeWireManager {
-    nodes: Vec<u32>,
     tray_handle: Option<ksni::blocking::Handle<SystemTray>>,
 }
 
 impl PipeWireManager {
-    fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            tray_handle: None,
-        }
+    const fn new() -> Self {
+        Self { tray_handle: None }
     }
 
     fn on_global_event(&mut self, id: u32, props: Option<&DictRef>) {
         let Some(props) = props else { return };
 
-        let Some(media_class) = props.get(&MEDIA_CLASS) else {
-            return;
-        };
-        if media_class != "Stream/Input/Audio" {
+        if props.get(&MEDIA_CLASS) != Some("Stream/Input/Audio") {
             return;
         }
 
@@ -37,50 +30,46 @@ impl PipeWireManager {
         let node_name = props
             .get(&NODE_NAME)
             .or_else(|| props.get(&APP_NAME))
-            .or_else(|| Some(&unknown_name_fallback))
-            .unwrap();
+            .unwrap_or(&unknown_name_fallback)
+            .to_string();
 
-        if self.nodes.len() == 0 {
-            println!("initializing tray");
-            assert!(self.tray_handle.is_none());
-            let mut nodes_names = HashMap::new();
-            nodes_names.insert(id, node_name.to_string());
-            let tray = SystemTray { nodes_names };
-            self.tray_handle = Some(tray.spawn().unwrap());
+        // create or update the tray
+        if let Some(handle) = self.tray_handle.as_mut() {
+            handle.update(|tray: &mut SystemTray| {
+                assert!(
+                    !tray.nodes.contains_key(&id),
+                    "node with id {id} already exists",
+                );
+                tray.nodes.insert(id, node_name)
+            });
         } else {
-            self.tray_handle
-                .as_mut()
-                .unwrap()
-                .update(|tray: &mut SystemTray| {
-                    assert!(!tray.nodes_names.contains_key(&id));
-                    tray.nodes_names.insert(id, node_name.to_string())
-                });
+            // initialize the tray with 1 node
+            let mut nodes = HashMap::with_capacity(1);
+            nodes.insert(id, node_name);
+            let tray = SystemTray { nodes };
+            self.tray_handle = Some(tray.spawn().expect("error spawning system tray"));
         }
-
-        println!("id: {id:?}");
-        println!("props: {props:?}");
-        println!("media_class: {media_class:?}");
-        self.nodes.push(id);
     }
 
     fn on_global_remove_event(&mut self, id: u32) {
-        println!("id: {id:?}");
+        let mut should_shutdown = false;
 
-        self.nodes.retain(|&x| x != id);
-        println!("current nodes: {:?}", self.nodes);
+        if let Some(handle) = self.tray_handle.as_mut() {
+            handle.update(|tray: &mut SystemTray| {
+                // if we're about to remove the last node, return early to shutdown the tray
+                if tray.nodes.len() == 1 {
+                    should_shutdown = true;
+                    return;
+                }
 
-        if self.nodes.len() == 0 {
+                tray.nodes.remove(&id);
+            });
+        }
+
+        if should_shutdown {
             if let Some(handle) = self.tray_handle.take() {
-                println!("closing tray");
                 handle.shutdown();
             }
-        } else {
-            self.tray_handle
-                .as_mut()
-                .unwrap()
-                .update(|tray: &mut SystemTray| {
-                    tray.nodes_names.remove(&id);
-                });
         }
     }
 }
@@ -101,12 +90,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .global(|global| {
             pipewire_manager
                 .borrow_mut()
-                .on_global_event(global.id, global.props)
+                .on_global_event(global.id, global.props);
         })
         .global_remove(|global_id| {
             pipewire_manager
                 .borrow_mut()
-                .on_global_remove_event(global_id)
+                .on_global_remove_event(global_id);
         })
         .register();
 
