@@ -1,15 +1,20 @@
-use std::{cell::RefCell, error::Error};
-
+use image::GenericImageView;
+use ksni::blocking::TrayMethods;
 use libspa::utils::dict::DictRef;
 use pipewire::{context::Context, keys::MEDIA_CLASS, main_loop::MainLoop};
+use std::{cell::RefCell, error::Error, sync::LazyLock};
 
 struct PipeWireManager {
     nodes: Vec<u32>,
+    tray_handle: Option<ksni::blocking::Handle<MyTray>>,
 }
 
 impl PipeWireManager {
-    fn new() -> PipeWireManager {
-        PipeWireManager { nodes: Vec::new() }
+    fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            tray_handle: None,
+        }
     }
 
     fn on_global_event(&mut self, id: u32, props: Option<&DictRef>) {
@@ -22,12 +27,17 @@ impl PipeWireManager {
             return;
         }
 
+        if self.nodes.len() == 0 {
+            println!("initializing tray");
+            assert!(self.tray_handle.is_none());
+            let tray = MyTray {};
+            self.tray_handle = Some(tray.spawn().unwrap());
+        }
+
         println!("id: {id:?}");
         println!("props: {props:?}");
         println!("media_class: {media_class:?}");
         self.nodes.push(id);
-
-        println!("TODO: turn on indicator");
     }
 
     fn on_global_remove_event(&mut self, id: u32) {
@@ -36,7 +46,46 @@ impl PipeWireManager {
         self.nodes.retain(|&x| x != id);
         println!("current nodes: {:?}", self.nodes);
 
-        println!("TODO: turn off indicator");
+        if self.nodes.len() == 0 {
+            if let Some(handle) = self.tray_handle.take() {
+                println!("closing tray");
+                handle.shutdown();
+            }
+        }
+    }
+}
+
+static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
+    let img =
+        image::load_from_memory_with_format(include_bytes!("../icon.png"), image::ImageFormat::Png)
+            .expect("valid image");
+    let (width, height) = img.dimensions();
+    let mut data = img.into_rgba8().into_vec();
+    assert_eq!(data.len() % 4, 0);
+    for pixel in data.chunks_exact_mut(4) {
+        pixel.rotate_right(1) // rgba to argb
+    }
+    ksni::Icon {
+        width: width as i32,
+        height: height as i32,
+        data,
+    }
+});
+
+#[derive(Debug)]
+struct MyTray {}
+
+impl ksni::Tray for MyTray {
+    fn id(&self) -> String {
+        env!("CARGO_PKG_NAME").into()
+    }
+
+    fn title(&self) -> String {
+        self.id().into() // TODO: show app names that use the microphone
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        vec![(*TRAY_ICON).clone()] // TODO: don't clone?
     }
 }
 

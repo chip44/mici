@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pipewire = "0.8.0"
-libspa = "0.8.0"
+pipewire = "0.8"
+libspa = "0.8"
+ksni = { version = "0.3", features = ["blocking"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints.rust]
 unsafe_code = "forbid"
